@@ -132,15 +132,19 @@ class ZManagedSpec(implicit ee: org.specs2.concurrent.ExecutionEnv) extends Test
     effects must be_===(List(1, 2, 3, 3, 2, 1))
   }
 
-  private def parallelAcquireAndRelease = unsafeRun {
-    for {
-      log      <- Ref.make[List[String]](Nil)
-      a        = ZManaged.make(UIO.succeed("A"))(_ => log.update("A" :: _))
-      b        = ZManaged.make(UIO.succeed("B"))(_ => log.update("B" :: _))
-      result   <- a.zipWithPar(b)(_ + _).use(ZIO.succeed)
-      cleanups <- log.get
-    } yield (result must haveSize(2)) and (cleanups must haveSize(2))
-  }
+  private def parallelAcquireAndRelease =
+    forAll(Gen.alphaChar) { chr =>
+      unsafeRun {
+        for {
+          log      <- Ref.make[List[String]](Nil)
+          str = chr.toString
+          a        = ZManaged.make(UIO.succeed(str))(_ => log.update(str :: _))
+          b        = ZManaged.make(UIO.succeed(str))(_ => log.update(str :: _))
+          result   <- a.zipWithPar(b)(_ + _).use(ZIO.succeed)
+          cleanups <- log.get
+        } yield (result must be_===(s"$str$str")) and (cleanups must be_===(List(str, str)))
+      }
+    }
 
   private def uninterruptible =
     doInterrupt(io => ZManaged.make(io)(_ => IO.unit), None)
