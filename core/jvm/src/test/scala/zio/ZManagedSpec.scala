@@ -132,15 +132,23 @@ class ZManagedSpec(implicit ee: org.specs2.concurrent.ExecutionEnv) extends Test
     effects must be_===(List(1, 2, 3, 3, 2, 1))
   }
 
-  private def parallelAcquireAndRelease = unsafeRun {
-    for {
+  private def parallelAcquireAndRelease = {
+    val io = for {
       log      <- Ref.make[List[String]](Nil)
       a        = ZManaged.make(UIO.succeed("A"))(_ => log.update("A" :: _))
       b        = ZManaged.make(UIO.succeed("B"))(_ => log.update("B" :: _))
       result   <- a.zipWithPar(b)(_ + _).use(ZIO.succeed)
       cleanups <- log.get
-    } yield (result must haveSize(2)) and (cleanups must haveSize(2))
+    } yield (result, cleanups)
+
+    nonFlaky(io.map(r => { r._1 must haveSize(2) and (r._2 must haveSize(2)) }))
   }
+
+  def nonFlaky(v: => ZIO[Environment, Any, org.specs2.matcher.MatchResult[Any]]): org.specs2.matcher.MatchResult[Any] =
+    (1 to 1000).foldLeft[org.specs2.matcher.MatchResult[Any]](true must_=== true) {
+      case (acc, _) =>
+        acc and unsafeRun(v)
+    }
 
   private def uninterruptible =
     doInterrupt(io => ZManaged.make(io)(_ => IO.unit), None)
